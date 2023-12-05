@@ -20,6 +20,9 @@ exclude = ["tests/images/*", "tests/fuzz_images/*"]
 weezl = "0.1.0"
 jpeg = { package = "jpeg-decoder", version = "0.3.0", default-features = false }
 flate2 = "1.0.20"
+tokio = { version = "1.34.0", features = ["io-util"] }
+async-trait = "0.1.74"
+tracing = "0.1.40"
 
 [dev-dependencies]
 criterion = "0.3.1"

@@ -1,9 +1,12 @@
 use std::convert::TryFrom;
 use std::io::{Read, Seek};
 
+use tokio::io::{AsyncRead, AsyncSeek};
+
 use crate::tags::Tag;
 use crate::{TiffError, TiffFormatError, TiffResult};
 
+use super::async_stream::SmartAsyncReader;
 use super::ifd::{Directory, Value};
 use super::stream::SmartReader;
 use super::Limits;

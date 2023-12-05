@@ -303,9 +303,9 @@ impl Value {
 
 #[derive(Clone)]
 pub struct Entry {
-    type_: Type,
-    count: u64,
-    offset: [u8; 8],
+    pub type_: Type,
+    pub count: u64,
+    pub offset: [u8; 8],
 }
 
 impl ::std::fmt::Debug for Entry {
@@ -646,7 +646,7 @@ impl Entry {
 
 /// Extracts a list of BYTE tags stored in an offset
 #[inline]
-fn offset_to_bytes(n: usize, entry: &Entry) -> TiffResult<Value> {
+pub fn offset_to_bytes(n: usize, entry: &Entry) -> TiffResult<Value> {
     Ok(List(
         entry.offset[0..n]
             .iter()
@@ -657,7 +657,7 @@ fn offset_to_bytes(n: usize, entry: &Entry) -> TiffResult<Value> {
 
 /// Extracts a list of SBYTE tags stored in an offset
 #[inline]
-fn offset_to_sbytes(n: usize, entry: &Entry) -> TiffResult<Value> {
+pub fn offset_to_sbytes(n: usize, entry: &Entry) -> TiffResult<Value> {
     Ok(List(
         entry.offset[0..n]
             .iter()

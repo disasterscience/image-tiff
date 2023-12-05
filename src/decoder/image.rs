@@ -166,11 +166,11 @@ impl Image {
 
         // Technically bits_per_sample.len() should be *equal* to samples, but libtiff also allows
         // it to be a single value that applies to all samples.
-        if bits_per_sample.len() != samples.into() && bits_per_sample.len() != 1 {
-            return Err(TiffError::FormatError(
-                TiffFormatError::InconsistentSizesEncountered,
-            ));
-        }
+        // if bits_per_sample.len() != samples.into() && bits_per_sample.len() != 1 {
+        //     return Err(TiffError::FormatError(
+        //         TiffFormatError::InconsistentSizesEncountered,
+        //     ));
+        // }
 
         // This library (and libtiff) do not support mixed sample formats.
         if bits_per_sample.iter().any(|&b| b != bits_per_sample[0]) {

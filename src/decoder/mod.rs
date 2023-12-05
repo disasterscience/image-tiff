@@ -16,6 +16,12 @@ use crate::tags::{
 
 use self::stream::{ByteOrder, EndianReader, SmartReader};
 
+mod async_decoder;
+pub use async_decoder::AsyncDecoder;
+mod async_ifd;
+mod async_image;
+mod async_stream;
+mod async_tag_reader;
 pub mod ifd;
 mod image;
 mod stream;
