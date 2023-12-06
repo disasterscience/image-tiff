@@ -24,7 +24,7 @@ impl AsyncTagReader {
         reader: &mut SmartAsyncReader<R>,
     ) -> TiffResult<Option<Value>>
     where
-        R: AsyncRead + AsyncSeek + Unpin + Send,
+        R: AsyncRead + AsyncSeek + Unpin + Send + Sync,
     {
         Ok(match self.ifd.get(&tag) {
             Some(entry) => Some(
@@ -42,7 +42,7 @@ impl AsyncTagReader {
         reader: &mut SmartAsyncReader<R>,
     ) -> TiffResult<Value>
     where
-        R: AsyncRead + AsyncSeek + Unpin + Send,
+        R: AsyncRead + AsyncSeek + Unpin + Send + Sync,
     {
         match self.find_tag(tag, reader).await? {
             Some(val) => Ok(val),
@@ -57,7 +57,7 @@ impl AsyncTagReader {
         reader: &mut SmartAsyncReader<R>,
     ) -> TiffResult<Option<Vec<T>>>
     where
-        R: AsyncRead + AsyncSeek + Unpin + Send,
+        R: AsyncRead + AsyncSeek + Unpin + Send + Sync,
     {
         self.find_tag(tag, reader)
             .await?

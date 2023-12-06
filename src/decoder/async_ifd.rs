@@ -18,7 +18,7 @@ use crate::decoder::ifd::Value::{
 };
 
 impl Entry {
-    pub async fn async_val<R: AsyncRead + AsyncSeek + Unpin + Send>(
+    pub async fn async_val<R: AsyncRead + AsyncSeek + Unpin + Send + Sync>(
         &self,
         limits: &super::Limits,
         bigtiff: bool,
@@ -347,23 +347,22 @@ impl Entry {
         //     }
         // }
 
-        todo!()
+        self.decode_async_offset(self.count, bo, bigtiff, limits, reader, self.type_)
+            .await
     }
 
     #[inline]
-    async fn decode_async_offset<R, F, Fut>(
+    async fn decode_async_offset<R>(
         &self,
         value_count: u64,
         bo: ByteOrder,
         bigtiff: bool,
         limits: &super::Limits,
         reader: &mut SmartAsyncReader<R>,
-        decode_fn: F,
+        type_: Type, // Pass the type as an argument
     ) -> TiffResult<Value>
     where
-        R: AsyncRead + AsyncSeek + Unpin,
-        F: Fn(&mut SmartAsyncReader<R>) -> Fut,
-        Fut: Future<Output = TiffResult<Value>>,
+        R: AsyncRead + AsyncSeek + Unpin + Send + Sync,
     {
         let value_count = usize::try_from(value_count)?;
         if value_count > limits.decoding_buffer_size / mem::size_of::<Value>() {
@@ -379,9 +378,67 @@ impl Entry {
         };
         reader.goto_offset(offset).await?;
 
+        // for _ in 0..value_count {
+        //     let result;
+        //     {
+        //         result = decode_fn(reader).await?;
+        //     }
+        //     v.push(result);
+        // }
+
         for _ in 0..value_count {
-            v.push(decode_fn(reader).await?)
+            let result = match type_ {
+                Type::BYTE => {
+                    let mut buf = [0; 1];
+                    reader.async_read_exact(&mut buf).await?;
+                    Byte(buf[0])
+                }
+                Type::SBYTE => SignedBig(i64::from(reader.read_i8().await?)),
+                Type::SHORT => UnsignedBig(u64::from(reader.read_u16().await?)),
+                Type::SSHORT => SignedBig(i64::from(reader.read_i16().await?)),
+                Type::LONG => Unsigned(reader.read_u32().await?),
+                Type::SLONG => Signed(reader.read_i32().await?),
+                Type::FLOAT => Float(reader.read_f32().await?),
+                Type::DOUBLE => Double(reader.read_f64().await?),
+                Type::RATIONAL => Rational(reader.read_u32().await?, reader.read_u32().await?),
+                Type::SRATIONAL => SRational(reader.read_i32().await?, reader.read_i32().await?),
+                Type::LONG8 => UnsignedBig(reader.read_u64().await?),
+                Type::SLONG8 => SignedBig(reader.read_i64().await?),
+                Type::IFD => Ifd(reader.read_u32().await?),
+                Type::IFD8 => IfdBig(reader.read_u64().await?),
+                Type::UNDEFINED => {
+                    let mut buf = [0; 1];
+                    reader.async_read_exact(&mut buf).await?;
+                    Byte(buf[0])
+                }
+                Type::ASCII => {
+                    let n = usize::try_from(self.count)?;
+                    if n > limits.decoding_buffer_size {
+                        return Err(TiffError::LimitsExceeded);
+                    }
+
+                    if bigtiff {
+                        reader
+                            .goto_offset(self.async_r(bo).read_u64().await?)
+                            .await?
+                    } else {
+                        reader
+                            .goto_offset(self.async_r(bo).read_u32().await?.into())
+                            .await?
+                    }
+
+                    let mut out = vec![0; n];
+                    reader.async_read_exact(&mut out).await?;
+                    // Strings may be null-terminated, so we trim anything downstream of the null byte
+                    if let Some(first) = out.iter().position(|&b| b == 0) {
+                        out.truncate(first);
+                    }
+                    Ascii(String::from_utf8(out)?)
+                }
+            };
+            v.push(result);
         }
+
         Ok(List(v))
     }
 

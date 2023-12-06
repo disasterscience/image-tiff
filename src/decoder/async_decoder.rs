@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::io::{self};
 
+// use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
 use tokio::io::{AsyncRead, AsyncSeek};
 use tracing::debug;
 
@@ -12,14 +14,11 @@ use crate::tags::{
 
 use crate::{ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
 
-use super::async_stream::SmartAsyncReader;
+use super::async_stream::{EndianAsyncReader, SmartAsyncReader};
 use super::ifd::Directory;
 use super::image::Image;
 use super::stream::ByteOrder;
 use super::{ifd, ChunkType, DecodingBuffer, DecodingResult, Limits};
-
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncSeekExt;
 
 /// The representation of a TIFF decoder, with an async interface
 ///
@@ -38,11 +37,18 @@ where
     image: Image,
 }
 
-impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
+impl<R> AsyncDecoder<R>
+where
+    R: AsyncRead + AsyncSeek + Unpin + Send + Sync,
+{
     /// Create a new decoder that decodes from the stream ```r```
     pub async fn new(mut r: R) -> TiffResult<AsyncDecoder<R>> {
         let mut endianess = Vec::with_capacity(2);
-        (&mut r).take(2).read_to_end(&mut endianess).await?;
+
+        // Previously: (&mut r).take(2).read_to_end(&mut endianess).await?; but needed to disambiguate the identially named trait
+        let mut t = tokio::io::AsyncReadExt::take(&mut r, 2);
+        tokio::io::AsyncReadExt::read_to_end(&mut t, &mut endianess).await?;
+
         let byte_order = match &*endianess {
             b"II" => ByteOrder::LittleEndian,
             b"MM" => ByteOrder::BigEndian,
@@ -240,7 +246,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
     #[inline]
     pub async fn read_byte(&mut self) -> Result<u8, io::Error> {
         let mut buf = [0; 1];
-        self.reader.read_exact(&mut buf).await?;
+        self.reader.async_read_exact(&mut buf).await?;
         Ok(buf[0])
     }
 
@@ -294,7 +300,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
     #[inline]
     pub async fn read_string(&mut self, length: usize) -> TiffResult<String> {
         let mut out = vec![0; length];
-        self.reader.read_exact(&mut out).await?;
+        self.reader.async_read_exact(&mut out).await?;
         // Strings may be null-terminated, so we trim anything downstream of the null byte
         if let Some(first) = out.iter().position(|&b| b == 0) {
             out.truncate(first);
@@ -311,7 +317,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
             ));
         }
         let mut val = [0; 4];
-        self.reader.read_exact(&mut val).await?;
+        self.reader.async_read_exact(&mut val).await?;
         Ok(val)
     }
 
@@ -319,7 +325,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
     #[inline]
     pub async fn read_offset_u64(&mut self) -> Result<[u8; 8], io::Error> {
         let mut val = [0; 8];
-        self.reader.read_exact(&mut val).await?;
+        self.reader.async_read_exact(&mut val).await?;
         Ok(val)
     }
 
@@ -362,13 +368,13 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
             let mut offset = [0; 8];
 
             let count = reader.read_u64().await?;
-            reader.read_exact(&mut offset).await?;
+            reader.async_read_exact(&mut offset).await?;
             ifd::Entry::new_u64(type_, count, offset)
         } else {
             let mut offset = [0; 4];
 
             let count = reader.read_u32().await?;
-            reader.read_exact(&mut offset).await?;
+            reader.async_read_exact(&mut offset).await?;
             ifd::Entry::new(type_, count, offset)
         };
         Ok(Some((tag, entry)))
@@ -580,10 +586,13 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
         chunk_index: u32,
         output_width: usize,
     ) -> TiffResult<()> {
+        debug!("offset");
         let offset = self.image.chunk_file_range(chunk_index)?.0;
         self.goto_offset_u64(offset).await?;
 
         let byte_order = self.reader.byte_order;
+
+        debug!("offset");
 
         self.image
             .expand_async_chunk(
@@ -648,14 +657,22 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + Sync> AsyncDecoder<R> {
     pub async fn read_chunk(&mut self, chunk_index: u32) -> TiffResult<DecodingResult> {
         let data_dims = self.image().chunk_data_dimensions(chunk_index)?;
 
+        debug!("data_dims: {:?}", data_dims);
+
         let mut result = self
             .result_buffer(data_dims.0 as usize, data_dims.1 as usize)
             .await?;
 
+        // debug!("result: {:?}", result);
+
         let buf = result.as_buffer(0);
+
+        debug!("buf");
 
         self.read_chunk_to_buffer(buf, chunk_index, data_dims.0 as usize)
             .await?;
+
+        debug!("chunk");
 
         Ok(result)
     }

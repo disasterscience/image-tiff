@@ -18,6 +18,7 @@ use self::stream::{ByteOrder, EndianReader, SmartReader};
 
 mod async_decoder;
 pub use async_decoder::AsyncDecoder;
+use tracing::debug;
 mod async_ifd;
 mod async_image;
 mod async_stream;
@@ -147,6 +148,21 @@ impl DecodingResult {
             DecodingResult::I64(ref mut buf) => DecodingBuffer::I64(&mut buf[start..]),
         }
     }
+
+    pub fn as_owned_buffer(&mut self, start: usize) -> OwnedDecodingBuffer {
+        match *self {
+            DecodingResult::U8(ref mut buf) => OwnedDecodingBuffer::U8(buf[start..].to_vec()),
+            DecodingResult::U16(ref mut buf) => OwnedDecodingBuffer::U16(buf[start..].to_vec()),
+            DecodingResult::U32(ref mut buf) => OwnedDecodingBuffer::U32(buf[start..].to_vec()),
+            DecodingResult::U64(ref mut buf) => OwnedDecodingBuffer::U64(buf[start..].to_vec()),
+            DecodingResult::F32(ref mut buf) => OwnedDecodingBuffer::F32(buf[start..].to_vec()),
+            DecodingResult::F64(ref mut buf) => OwnedDecodingBuffer::F64(buf[start..].to_vec()),
+            DecodingResult::I8(ref mut buf) => OwnedDecodingBuffer::I8(buf[start..].to_vec()),
+            DecodingResult::I16(ref mut buf) => OwnedDecodingBuffer::I16(buf[start..].to_vec()),
+            DecodingResult::I32(ref mut buf) => OwnedDecodingBuffer::I32(buf[start..].to_vec()),
+            DecodingResult::I64(ref mut buf) => OwnedDecodingBuffer::I64(buf[start..].to_vec()),
+        }
+    }
 }
 
 // A buffer for image decoding
@@ -237,6 +253,78 @@ impl<'a> DecodingBuffer<'a> {
             DecodingBuffer::I64(buf) => bytecast::i64_as_ne_mut_bytes(buf),
             DecodingBuffer::F32(buf) => bytecast::f32_as_ne_mut_bytes(buf),
             DecodingBuffer::F64(buf) => bytecast::f64_as_ne_mut_bytes(buf),
+        }
+    }
+}
+
+// A buffer for image decoding
+#[derive(Clone)]
+pub enum OwnedDecodingBuffer {
+    /// A slice of unsigned bytes
+    U8(Vec<u8>),
+    /// A slice of unsigned words
+    U16(Vec<u16>),
+    /// A slice of 32 bit unsigned ints
+    U32(Vec<u32>),
+    /// A slice of 64 bit unsigned ints
+    U64(Vec<u64>),
+    /// A slice of 32 bit IEEE floats
+    F32(Vec<f32>),
+    /// A slice of 64 bit IEEE floats
+    F64(Vec<f64>),
+    /// A slice of 8 bits signed ints
+    I8(Vec<i8>),
+    /// A slice of 16 bits signed ints
+    I16(Vec<i16>),
+    /// A slice of 32 bits signed ints
+    I32(Vec<i32>),
+    /// A slice of 64 bits signed ints
+    I64(Vec<i64>),
+}
+
+impl OwnedDecodingBuffer {
+    fn byte_len(&self) -> usize {
+        match *self {
+            OwnedDecodingBuffer::U8(_) => 1,
+            OwnedDecodingBuffer::U16(_) => 2,
+            OwnedDecodingBuffer::U32(_) => 4,
+            OwnedDecodingBuffer::U64(_) => 8,
+            OwnedDecodingBuffer::F32(_) => 4,
+            OwnedDecodingBuffer::F64(_) => 8,
+            OwnedDecodingBuffer::I8(_) => 1,
+            OwnedDecodingBuffer::I16(_) => 2,
+            OwnedDecodingBuffer::I32(_) => 4,
+            OwnedDecodingBuffer::I64(_) => 8,
+        }
+    }
+
+    fn subrange(&mut self, range: Range<usize>) -> OwnedDecodingBuffer {
+        match self {
+            OwnedDecodingBuffer::U8(buf) => OwnedDecodingBuffer::U8(buf[range].to_vec()),
+            OwnedDecodingBuffer::U16(buf) => OwnedDecodingBuffer::U16(buf[range].to_vec()),
+            OwnedDecodingBuffer::U32(buf) => OwnedDecodingBuffer::U32(buf[range].to_vec()),
+            OwnedDecodingBuffer::U64(buf) => OwnedDecodingBuffer::U64(buf[range].to_vec()),
+            OwnedDecodingBuffer::F32(buf) => OwnedDecodingBuffer::F32(buf[range].to_vec()),
+            OwnedDecodingBuffer::F64(buf) => OwnedDecodingBuffer::F64(buf[range].to_vec()),
+            OwnedDecodingBuffer::I8(buf) => OwnedDecodingBuffer::I8(buf[range].to_vec()),
+            OwnedDecodingBuffer::I16(buf) => OwnedDecodingBuffer::I16(buf[range].to_vec()),
+            OwnedDecodingBuffer::I32(buf) => OwnedDecodingBuffer::I32(buf[range].to_vec()),
+            OwnedDecodingBuffer::I64(buf) => OwnedDecodingBuffer::I64(buf[range].to_vec()),
+        }
+    }
+
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        match self {
+            OwnedDecodingBuffer::U8(ref mut buf) => buf,
+            OwnedDecodingBuffer::I8(buf) => bytecast::i8_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::U16(buf) => bytecast::u16_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::I16(buf) => bytecast::i16_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::U32(buf) => bytecast::u32_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::I32(buf) => bytecast::i32_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::U64(buf) => bytecast::u64_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::I64(buf) => bytecast::i64_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::F32(buf) => bytecast::f32_as_ne_mut_bytes(buf),
+            OwnedDecodingBuffer::F64(buf) => bytecast::f64_as_ne_mut_bytes(buf),
         }
     }
 }
@@ -532,9 +620,15 @@ impl<R: Read + Seek> Decoder<R> {
                 ))
             }
         };
+        debug!("Byte order: {:?}", byte_order);
+
         let mut reader = SmartReader::wrap(r, byte_order);
 
-        let bigtiff = match reader.read_u16()? {
+        let bytes = reader.read_u16()?;
+
+        debug!("bytes: {:?}", bytes);
+
+        let bigtiff = match bytes {
             42 => false,
             43 => {
                 // Read bytesize of offsets (in bigtiff it's alway 8 but provide a way to move to 16 some day)

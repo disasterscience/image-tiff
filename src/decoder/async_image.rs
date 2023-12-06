@@ -1,4 +1,5 @@
-use tokio::io::{AsyncRead, AsyncSeek};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek};
+use tracing::debug;
 
 use super::async_stream::{AsyncLZWReader, SmartAsyncReader};
 use super::async_tag_reader::AsyncTagReader;
@@ -12,7 +13,6 @@ use crate::tags::{
 use crate::{ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError};
 use std::convert::TryFrom;
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
 
 impl Image {
     pub async fn from_async_reader<R: AsyncRead + AsyncSeek + Unpin + Sync + Send>(
@@ -382,9 +382,14 @@ impl Image {
         )?;
 
         if output_width == data_dims.0 as usize && padding_right == 0 {
+            debug!("1");
             let total_samples = data_dims.0 as usize * data_dims.1 as usize * samples;
+            debug!("data_dims: {:?}", data_dims);
+            debug!("total_samples: {:?}", total_samples);
             let tile = &mut buffer.as_bytes_mut()[..total_samples * byte_len];
+            debug!("tile len: {:?}", tile.len());
             reader.read_exact(tile).await?;
+            debug!("readed");
 
             for row in 0..data_dims.1 as usize {
                 let row_start = row * output_width * samples;
@@ -396,6 +401,7 @@ impl Image {
                 super::invert_colors(&mut buffer.subrange(0..total_samples), color_type);
             }
         } else if padding_right > 0 && self.predictor == Predictor::FloatingPoint {
+            debug!("2");
             // The floating point predictor shuffles the padding bytes into the encoded output, so
             // this case is handled specially when needed.
             let mut encoded = vec![0u8; chunk_dims.0 as usize * samples * byte_len];
@@ -415,6 +421,7 @@ impl Image {
                 }
             }
         } else {
+            debug!("3");
             for row in 0..data_dims.1 as usize {
                 let row_start = row * output_width * samples;
                 let row_end = row_start + data_dims.0 as usize * samples;

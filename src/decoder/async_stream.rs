@@ -1,7 +1,7 @@
 use std::io::{self};
 
 use async_trait::async_trait;
-use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
+use tokio::io::{AsyncRead, AsyncSeek, ReadBuf, Take};
 use weezl::decode::Decoder;
 use weezl::LzwStatus;
 
@@ -130,6 +130,13 @@ pub trait EndianAsyncReader: AsyncRead + Unpin {
         self.read_exact(buf).await?;
         Ok(())
     }
+
+    // fn take(self, limit: u64) -> Take<Self>
+    // where
+    //     Self: Sized,
+    // {
+    //     self.take(limit)
+    // }
 
     /// Reads an u16
     #[inline(always)]
